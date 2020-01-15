@@ -29,14 +29,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const bufferSize = 1024 << 6 // For the socket reader
 const eventsBuffer = 16      // For the events channel (memory eater!)
+const timeoutPeriod = 60 * time.Second
 
 var errMissingAuthRequest = errors.New("Missing auth request")
 var errInvalidPassword = errors.New("Invalid password")
 var errInvalidCommand = errors.New("Invalid command contains \\r or \\n")
+var errTimeout = errors.New("Timeout")
 
 // Connection is the event socket connection handler.
 type Connection struct {
@@ -52,7 +55,7 @@ func newConnection(c net.Conn) *Connection {
 	h := Connection{
 		conn:   c,
 		reader: bufio.NewReaderSize(c, bufferSize),
-		err:    make(chan error),
+		err:    make(chan error, 1),
 		cmd:    make(chan *Event),
 		api:    make(chan *Event),
 		evt:    make(chan *Event, eventsBuffer),
@@ -227,15 +230,8 @@ func (h *Connection) readOne() bool {
 			resp.Header[capitalize(k)] = v
 		}
 		if v, _ := resp.Header["_body"]; v != nil {
-                         switch vv := v.(type) {
-                         case string:
-                             resp.Body = ""
-                         case int:
-                             resp.Body = string(vv)
-                         default:
-                             resp.Body = ""
-                         }
-					delete(resp.Header, "_body")
+			resp.Body = v.(string)
+			delete(resp.Header, "_body")
 		} else {
 			resp.Body = ""
 		}
@@ -346,6 +342,8 @@ func (h *Connection) Send(command string) (*Event, error) {
 		return ev, nil
 	case ev = <-h.api:
 		return ev, nil
+	case <-time.After(timeoutPeriod):
+		return nil, errTimeout
 	}
 }
 
@@ -413,6 +411,8 @@ func (h *Connection) SendMsg(m MSG, uuid, appData string) (*Event, error) {
 		return nil, err
 	case ev = <-h.cmd:
 		return ev, nil
+	case <-time.After(timeoutPeriod):
+		return nil, errTimeout
 	}
 }
 
@@ -468,31 +468,25 @@ func (r *Event) String() string {
 
 // Get returns an Event value, or "" if the key doesn't exist.
 func (r *Event) Get(key string) string {
-	if v, ok := r.Header[key].(string); ok {
-		return v
+	val, ok := r.Header[key]
+	if !ok || val == nil {
+		return ""
 	}
-	return ""
+	if s, ok := val.([]string); ok {
+		return strings.Join(s, ", ")
+	}
+	return val.(string)
 }
-//func (r *Event) Get(key string) string {
-//	return r.Header[key].(string)
-//}
 
 // GetInt returns an Event value converted to int, or an error if conversion
 // is not possible.
 func (r *Event) GetInt(key string) (int, error) {
-	n, err := strconv.Atoi(r.Get(key))
-		if err != nil {
-			return 0, err
-		}
+	n, err := strconv.Atoi(r.Header[key].(string))
+	if err != nil {
+		return 0, err
+	}
 	return n, nil
 }
-//func (r *Event) GetInt(key string) (int, error) {
-//	n, err := strconv.Atoi(r.Header[key].(string))
-//	if err != nil {
-//		return 0, err
-//	}
-//	return n, nil
-//}
 
 // PrettyPrint prints Event headers and body to the standard output.
 func (r *Event) PrettyPrint() {
