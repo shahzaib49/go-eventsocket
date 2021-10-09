@@ -18,6 +18,7 @@ package eventsocket
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"context"
 )
 
 const bufferSize = 1024 << 6 // For the socket reader
@@ -191,7 +191,7 @@ func (h *Connection) readOne() bool {
 	case "api/response":
 		if len(resp.Body) >= 2 {
 			if string(resp.Body[:2]) == "-E" {
-				h.err <- errors.New(string(resp.Body)[5:])				
+				h.err <- errors.New(string(resp.Body)[5:])
 				return true
 			}
 		}
@@ -234,12 +234,12 @@ func (h *Connection) readOne() bool {
 		}
 		if v, _ := resp.Header["_body"]; v != nil {
 			switch vv := v.(type) {
-				case string:
-					resp.Body = vv
-				case int:
-					resp.Body = string(vv)
-				default:
-					resp.Body = ""
+			case string:
+				resp.Body = vv
+			case int:
+				resp.Body = string(vv)
+			default:
+				resp.Body = ""
 			}
 			delete(resp.Header, "_body")
 		} else {
@@ -383,7 +383,7 @@ type MSG map[string]string
 // If appData is set, a "content-length" header is expected (lower case!).
 //
 // See http://wiki.freeswitch.org/wiki/Event_Socket#sendmsg for details.
-func (h *Connection) SendMsg(ctx context.Context,m MSG, uuid, appData string) (*Event, error) {
+func (h *Connection) SendMsg(ctx context.Context, m MSG, uuid, appData string) (*Event, error) {
 	b := bytes.NewBufferString("sendmsg")
 	if uuid != "" {
 		// Make sure there's no \r or \n in the UUID.
@@ -409,7 +409,7 @@ func (h *Connection) SendMsg(ctx context.Context,m MSG, uuid, appData string) (*
 	if m["content-length"] != "" && appData != "" {
 		b.WriteString(appData)
 	}
-	
+
 	if _, err := b.WriteTo(h.conn); err != nil {
 		return nil, err
 	}
@@ -424,9 +424,9 @@ func (h *Connection) SendMsg(ctx context.Context,m MSG, uuid, appData string) (*
 		return ev, nil
 	case <-time.After(timeoutPeriod): //Either timeout happens
 		return nil, errTimeout
-	case <-ctx.Done()://Or provided Context's deadline exceeds
+	case <-ctx.Done(): //Or provided Context's deadline exceeds
 		return nil, fmt.Errorf("context deadline exceeded")
-	
+
 	}
 }
 
@@ -438,14 +438,14 @@ func (h *Connection) SendMsg(ctx context.Context,m MSG, uuid, appData string) (*
 //	Execute("playback", "/tmp/test.wav", false)
 //
 // See http://wiki.freeswitch.org/wiki/Event_Socket#execute for details.
-func (h *Connection) Execute(ctx context.Context,appName, appArg string, lock bool) (*Event, error) {
+func (h *Connection) Execute(ctx context.Context, appName, appArg string, lock bool) (*Event, error) {
 	var evlock string
 	if lock {
 		// Could be strconv.FormatBool(lock), but we don't want to
 		// send event-lock when it's set to false.
 		evlock = "true"
 	}
-	return h.SendMsg(ctx,MSG{
+	return h.SendMsg(ctx, MSG{
 		"call-command":     "execute",
 		"execute-app-name": appName,
 		"execute-app-arg":  appArg,
@@ -455,8 +455,8 @@ func (h *Connection) Execute(ctx context.Context,appName, appArg string, lock bo
 
 // ExecuteUUID is similar to Execute, but takes a UUID and no lock. Suitable
 // for use on inbound event socket connections (acting as client).
-func (h *Connection) ExecuteUUID(ctx context.Context,uuid, appName, appArg string) (*Event, error) {
-	return h.SendMsg(ctx,MSG{
+func (h *Connection) ExecuteUUID(ctx context.Context, uuid, appName, appArg string) (*Event, error) {
+	return h.SendMsg(ctx, MSG{
 		"call-command":     "execute",
 		"execute-app-name": appName,
 		"execute-app-arg":  appArg,
