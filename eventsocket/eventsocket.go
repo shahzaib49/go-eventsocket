@@ -87,7 +87,6 @@ type HandleFunc func(*Connection)
 //			...
 //		}
 //	}
-//
 func ListenAndServe(addr string, fn HandleFunc) error {
 	srv, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -115,7 +114,6 @@ func ListenAndServe(addr string, fn HandleFunc) error {
 //		ev.PrettyPrint()
 //		...
 //	}
-//
 func Dial(addr, passwd string) (*Connection, error) {
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -478,6 +476,11 @@ func (r *Event) String() string {
 	} else {
 		return fmt.Sprintf("%s body=%s", r.Header, r.Body)
 	}
+}
+
+// Set allows user to attach header and value to an event
+func (r *Event) Set(header, value string) {
+	r.Header[header] = value
 }
 
 // Get returns an Event value, or "" if the key doesn't exist.
