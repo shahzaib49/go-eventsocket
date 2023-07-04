@@ -176,7 +176,7 @@ func (h *Connection) readOne() bool {
 	switch hdr.Get("Content-Type") {
 	case "command/reply":
 		reply := hdr.Get("Reply-Text")
-		if reply[:2] == "-E" {
+		if len(reply)>1 && reply[:2] == "-E" {
 			h.err <- errors.New(reply[5:])
 			return true
 		}
@@ -187,11 +187,9 @@ func (h *Connection) readOne() bool {
 		}
 		h.cmd <- resp
 	case "api/response":
-		if len(resp.Body) >= 2 {
-			if string(resp.Body[:2]) == "-E" {
-				h.err <- errors.New(string(resp.Body)[5:])
-				return true
-			}
+		if len(resp.Body)>1 && string(resp.Body[:2]) == "-E" {
+			h.err <- errors.New(string(resp.Body)[5:])
+			return true
 		}
 		copyHeaders(&hdr, resp, false)
 		h.api <- resp
